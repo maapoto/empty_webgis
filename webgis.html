@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web GIS</title>
+  
+
+  <!-- Leaflet core -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Useful Leaflet plugins -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+  <script src="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+  <script src="https://unpkg.com/@turf/turf@7.2.0/turf.min.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+  <script src="https://unpkg.com/leaflet.browser.print/dist/leaflet.browser.print.min.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
+  <script src="https://unpkg.com/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2b;
+      --panel-2: #0e1626;
+      --text: #e6eefc;
+      --muted: #94a3b8;
+      --accent: #6ee7b7;
+      --accent-2: #60a5fa;
+      --danger: #f87171;
+      --outline: 1px solid rgba(255,255,255,.06);
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    [data-theme="light"] {
+      --bg: #f6f7fb; --panel:#ffffff; --panel-2:#f2f4f8; --text:#0f172a; --muted:#475569;
+      --accent:#0ea5e9; --accent-2:#22c55e; --danger:#ef4444; --outline:1px solid rgba(15,23,42,.08);
+    }
+
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui,-apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+
+    /* Layout */
+    .app { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 64px 1fr; grid-template-areas: "header header" "sidebar map"; height: 100%; transition: grid-template-columns .3s ease; }
+    .app.collapsed .sidebar {
+      display: none;
+    }
+    .app.collapsed {
+      grid-template-columns: 0 1fr;
+    }
+    .header { grid-area: header; display:flex; align-items:center; gap:12px; padding: 10px 16px; background: var(--panel); border-bottom: var(--outline); position: sticky; top:0; z-index:1000; }
+
+    .brand { display:flex; align-items:center; gap:10px; font-weight: 800; letter-spacing:.4px; }
+    .brand .dot { width:12px; height:12px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); border-radius:50%; box-shadow: 0 0 0 6px rgba(102, 204, 255, .08); }
+    .brand span { opacity:.9; }
+
+    .header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
+    .btn, button { background: linear-gradient(180deg, var(--panel-2), var(--panel)); color: var(--text); border: var(--outline); border-radius: 14px; padding: 8px 12px; font-weight:600; cursor: pointer; box-shadow: var(--shadow); transition: .2s transform, .2s opacity; }
+    .btn:hover { transform: translateY(-1px); }
+
+    .search { display:flex; align-items:center; background: var(--panel-2); border: var(--outline); border-radius: 14px; padding: 6px 10px; min-width: 340px; gap: 8px; }
+    .search input { flex:1; background: transparent; border: none; outline: none; color: var(--text); font-size: 14px; }
+
+    .sidebar { grid-area: sidebar; background: var(--panel); border-right: var(--outline); overflow: auto; }
+    .sidebar header { position: sticky; top: 0; background: inherit; padding: 14px 14px; border-bottom: var(--outline); display:flex; align-items:center; justify-content: space-between; }
+
+    .panel { padding: 12px 14px; border-bottom: var(--outline); }
+    .panel h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing:.12em; color: var(--muted); }
+    .row { display:flex; gap: 8px; align-items:center; margin-bottom: 8px; }
+    .row input[type="text"], .row input[type="url"], .row select { flex:1; padding: 6px 8px; border-radius: 12px; border: var(--outline); background: var(--panel-2); color: var(--text); }
+    #analysisParam { width: 80px; }
+
+    .chip { background: var(--panel-2); border: var(--outline); padding: 6px 10px; border-radius: 999px; font-size: 12px; display:inline-flex; gap:6px; align-items:center; cursor:pointer; }
+
+    .map { grid-area: map; position: relative; }
+    #map { position:absolute; inset:0; }
+
+    /* Floating panels */
+    .floating { position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; gap:10px; z-index: 800; }
+    .card { background: var(--panel); border: var(--outline); border-radius: 16px; box-shadow: var(--shadow); padding: 10px; }
+
+    .basemap-gallery { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .basemap { position: relative; border-radius: 12px; overflow: hidden; border: var(--outline); cursor: pointer; }
+    .basemap img { width: 100%; height: 80px; object-fit: cover; display:block; }
+    .basemap label { position:absolute; left:8px; bottom:8px; font-size: 11px; padding: 4px 8px; background: rgba(0,0,0,.45); border-radius: 999px; backdrop-filter: blur(6px); }
+    .basemap.active { outline: 2px solid var(--accent); }
+
+    /* Attribute table */
+    .table-panel { position:absolute; left:12px; bottom:12px; right:12px; background: var(--panel); border: var(--outline); border-radius: 16px; box-shadow: var(--shadow); max-height: 42%; display:none; overflow: hidden; }
+    .table-panel header { display:flex; align-items:center; justify-content:space-between; padding: 10px 12px; border-bottom: var(--outline); }
+    .table-panel table { width:100%; border-collapse: collapse; font-size: 13px; }
+    .table-panel th, .table-panel td { padding: 8px 10px; border-bottom: var(--outline); text-align:left; }
+    .table-panel .scroll { overflow:auto; max-height: calc(42vh - 48px); }
+
+    /* Legend */
+    .legend { font-size:13px; }
+    .legend .item { display:flex; align-items:center; gap:8px; margin:6px 0; }
+    .swatch { width:14px; height:14px; border-radius:4px; border:1px solid rgba(0,0,0,.2); }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 64px 1fr 280px; grid-template-areas: "header" "map" "sidebar"; }
+      .sidebar { border-right:none; border-top: var(--outline); }
+      .floating { right: 8px; top: 8px; }
+      .basemap-gallery { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app" data-theme="dark">
+    <!-- HEADER -->
+    <div class="header">
+      <button class="btn" id="collapseSidebar" title="Toggle sidebar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="brand"><div class="dot"></div><span>GeoPortal CNDG</span></div>
+      <div class="search" title="Type a place or coordinates (lat,lon)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.6"/></svg>
+        <input id="searchInput" type="text" placeholder="Search address, place, or  -8.556,125.579" />
+        <button class="btn" id="searchGo">Go</button>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="themeToggle" title="Toggle theme">🌓</button>
+        <button class="btn" id="attrBtn" title="Open Attribute Table">📋</button>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <header>
+        <strong>Workspace</strong>
+      </header>
+
+      <section class="panel" id="layersPanel">
+        <h3>Layers</h3>
+        <div class="row">
+          <label class="chip"><input type="checkbox" id="toggleDraw" checked /> Draw & Measure</label>
+          <label class="chip"><input type="checkbox" id="toggleGeo" checked /> Geocoder</label>
+        </div>
+        <div id="layerList"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Basemaps</h3>
+        <div class="basemap-gallery" id="basemapGallery"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Add Data</h3>
+        <div class="row">
+          <input type="file" id="fileInput" accept=".geojson,.json" />
+        </div>
+        <div class="row">
+          <input type="url" id="wmsUrl" placeholder="WMS URL (e.g. https://.../wms)"/>
+        </div>
+        <div class="row">
+          <input type="text" id="wmsLayer" placeholder="Layer name (e.g. workspace:layer)"/>
+          <button class="btn" id="addWms">Add WMS</button>
+        </div>
+        <div class="row">
+          <input type="url" id="geojsonUrl" placeholder="GeoJSON URL"/>
+          <button class="btn" id="addGeoJsonUrl">Add</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>Analysis</h3>
+        <div class="row">
+          <select id="analysisSelect">
+            <option value="none">Choose Analysis…</option>
+            <option value="buffer">Buffer (m)</option>
+            <option value="centroid">Centroid</option>
+            <option value="bbox">Bounding Box</option>
+          </select>
+          <input type="number" id="analysisParam" placeholder="Distance" />
+          <button class="btn" id="runAnalysis">Run</button>
+        </div>
+        <div class="row">
+          <label class="chip"><input type="checkbox" id="timeFilterToggle"> Time Filter</label>
+          <input type="range" min="1990" max="2035" value="2010" id="timeSlider" style="width:100%" />
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>Share & Bookmarks</h3>
+        <div class="row">
+          <button class="btn" id="shareLink">Copy Share Link</button>
+          <button class="btn" id="saveBookmark">Save View</button>
+        </div>
+        <div id="bookmarks"></div>
+      </section>
+    </aside>
+
+    <!-- MAP -->
+    <main class="map">
+      <div id="map"></div>
+
+      <!-- Floating legend & coords -->
+      <div class="floating">
+        <div class="card legend" id="legend"><strong>Legend</strong><div id="legendItems"></div></div>
+        <div class="card" id="coords">Lat: — , Lng: — | Zoom: —</div>
+      </div>
+
+      <!-- Attribute Table -->
+      <div class="table-panel" id="tablePanel">
+        <header>
+          <strong>Attribute Table</strong>
+          <div>
+            <button class="btn" id="downloadCsv">Download CSV</button>
+            <button class="btn" id="closeTable">✕</button>
+          </div>
+        </header>
+        <div class="scroll">
+          <table id="attrTable"></table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // THEME
+    const appRoot = document.getElementById('app');
+    document.getElementById('themeToggle').onclick = () => {
+      appRoot.dataset.theme = appRoot.dataset.theme === 'dark' ? 'light' : 'dark';
+    };
+
+    // MAP INIT
+    const map = L.map('map', { zoomControl: false, fullscreenControl: true }).setView([-8.556, 125.579], 12);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    // Basemaps
+    const basemaps = {
+      "OSM": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 23, attribution: '&copy; OSM' }),
+      "Google Satellite": L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 23,attribution: '&copy; Google' }),
+      "Carto Light": L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', { subdomains: 'abcd', maxZoom: 23, attribution: '&copy; Carto' }),
+      "Carto Dark": L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', { subdomains: 'abcd', maxZoom: 23, attribution: '&copy; Carto' }),
+      "ESRI Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 23, attribution: '&copy; Esri' }),
+      
+    };
+    basemaps["OSM"].addTo(map);
+
+    // Basemap gallery UI
+    const basemapGallery = document.getElementById('basemapGallery');
+    const thumbs = {
+      'OSM': 'https://a.tile.openstreetmap.org/8/217/134.png',
+      'Google Satellite': 'https://mt1.google.com/vt/lyrs=s&x=54&y=33&z=6',
+      'Carto Light': 'https://cartodb-basemaps-d.global.ssl.fastly.net/light_all/8/217/134.png',
+      'Carto Dark': 'https://cartodb-basemaps-d.global.ssl.fastly.net/dark_all/8/217/134.png',
+      'ESRI Imagery': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/7/67/108',
+      
+    };
+    let currentBasemap = 'OSM';
+    const refreshBasemapUI = () => {
+      basemapGallery.innerHTML = '';
+      Object.keys(basemaps).forEach(name => {
+        const div = document.createElement('div');
+        div.className = 'basemap' + (name === currentBasemap ? ' active' : '');
+        div.innerHTML = `<img src="${thumbs[name]}" alt="${name}"><label>${name}</label>`;
+        div.onclick = () => { map.eachLayer(l=>{ if(l instanceof L.TileLayer) map.removeLayer(l); }); basemaps[name].addTo(map); currentBasemap = name; refreshBasemapUI(); };
+        basemapGallery.appendChild(div);
+      });
+    };
+    refreshBasemapUI();
+
+    // Utilities
+    const layerRegistry = []; // {layer, name, type, styleFn}
+    const layerListEl = document.getElementById('layerList');
+    const legendItems = document.getElementById('legendItems');
+
+    function addLayerToUI(entry){
+      const row = document.createElement('div');
+      row.className = 'row';
+      const id = 'layer_' + Math.random().toString(36).slice(2,9);
+      row.innerHTML = `
+        <label class="chip"><input type="checkbox" id="${id}" checked> ${entry.name}</label>
+        <button class="btn" title="Zoom to layer">🔎</button>
+        <button class="btn" title="Remove">🗑️</button>
+      `;
+      const [chk, zoomBtn, delBtn] = row.querySelectorAll('input,button');
+      chk.onchange = () => chk.checked ? entry.layer.addTo(map) : map.removeLayer(entry.layer);
+      zoomBtn.onclick = () => { try { map.fitBounds(entry.layer.getBounds(), { maxZoom: 17 }); } catch(e){} };
+      delBtn.onclick = () => { if(map.hasLayer(entry.layer)) map.removeLayer(entry.layer); layerListEl.removeChild(row); const idx = layerRegistry.indexOf(entry); if(idx>-1) layerRegistry.splice(idx,1); rebuildLegend(); };
+      layerListEl.appendChild(row);
+      rebuildLegend();
+    }
+
+    function rebuildLegend(){
+      legendItems.innerHTML = '';
+      layerRegistry.forEach(e=>{
+        if(!map.hasLayer(e.layer)) return;
+        const div = document.createElement('div');
+        div.className = 'item';
+        const sw = document.createElement('span');
+        sw.className = 'swatch';
+        sw.style.background = (e.styleColor||'#4ade80');
+        const name = document.createElement('span');
+        name.textContent = e.name;
+        div.appendChild(sw); div.appendChild(name);
+        legendItems.appendChild(div);
+      });
+    }
+
+    // Geolocation & coordinates
+    L.control.locate({ setView: 'untilPan', drawCircle: false, keepCurrentZoomLevel: true }).addTo(map);
+    map.on('mousemove zoomend moveend', (e)=>{
+      const c = map.getCenter();
+      const latlng = e.latlng || c;
+      document.getElementById('coords').textContent = `Lat: ${latlng.lat.toFixed(5)}, Lng: ${latlng.lng.toFixed(5)} | Zoom: ${map.getZoom()}`;
+    });
+
+    // Draw & measure
+    const drawn = new L.FeatureGroup().addTo(map);
+    const drawControl = new L.Control.Draw({
+      position: 'topright',
+      edit: { featureGroup: drawn },
+      draw: { circle: false, circlemarker: false }
+    });
+    map.addControl(drawControl);
+
+    function computeMetrics(layer){
+      try {
+        const gj = layer.toGeoJSON();
+        let text = '';
+        if(gj.geometry.type === 'LineString' || gj.geometry.type === 'MultiLineString'){
+          const len = turf.length(gj, {units:'kilometers'});
+          text = `Length: ${len.toFixed(3)} km`;
+        } else if (gj.geometry.type === 'Polygon' || gj.geometry.type === 'MultiPolygon'){
+          const area = turf.area(gj);
+          text = `Area: ${(area/1e6).toFixed(3)} sq km`;
+        } else if (gj.geometry.type === 'Point'){
+          const [lng, lat] = gj.geometry.coordinates;
+          text = `Point: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        }
+        if(text){ layer.bindPopup(text).openPopup(); }
+      } catch(err) { console.warn(err); }
+    }
+    map.on(L.Draw.Event.CREATED, (e)=>{ drawn.addLayer(e.layer); computeMetrics(e.layer); });
+
+    document.getElementById('toggleDraw').onchange = (ev)=>{
+      if(ev.target.checked){ map.addControl(drawControl); map.addLayer(drawn); }
+      else { map.removeControl(drawControl); map.removeLayer(drawn); }
+    };
+
+    // Geocoder control (also header search)
+    const geocoder = L.Control.geocoder({ defaultMarkGeocode: true, position:'topleft' }).addTo(map);
+    document.getElementById('toggleGeo').onchange = (ev)=>{
+      if(ev.target.checked){ geocoder.addTo(map); } else { geocoder.remove(); }
+    };
+
+    // Header search: coords or query
+    const searchInput = document.getElementById('searchInput');
+    const searchGo = document.getElementById('searchGo');
+    searchGo.onclick = () => {
+      const q = searchInput.value.trim();
+      if(!q) return;
+      const m = q.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+      if(m){
+        const lat = parseFloat(m[1]);
+        const lng = parseFloat(m[2]);
+        map.setView([lat,lng], 16);
+        L.marker([lat,lng]).addTo(map).bindPopup(`Lat ${lat.toFixed(5)}, Lng ${lng.toFixed(5)}`).openPopup();
+      } else {
+        geocoder.options.geocoder.geocode(q, (results)=>{
+          if(results && results[0]){
+            const r = results[0];
+            if(r.bbox) map.fitBounds(r.bbox); else if(r.center) map.setView(r.center, 15);
+          }
+        });
+      }
+    };
+
+    // Print/export
+    L.control.browserPrint({ title: 'Print Map', position: 'topright' }).addTo(map);
+
+    // Add GeoJSON from file
+    function styleFor(name){
+      // deterministic pseudo-random color from name
+      const h = Array.from(name).reduce((a,c)=>a + c.charCodeAt(0), 0) % 360;
+      return { color: `hsl(${h} 85% 60%)`, weight: 2, fillOpacity: .15 };
+    }
+
+    function attachFeatureHandlers(layer){
+      layer.on('click', (e)=>{
+        const props = e.layer ? e.layer.feature.properties : (e.target.feature ? e.target.feature.properties : {});
+        const html = Object.keys(props||{}).map(k=>`<tr><th>${k}</th><td>${props[k]}</td></tr>`).join('');
+        L.popup().setLatLng(e.latlng).setContent(`<table>${html||'<tr><td>No attributes</td></tr>'}</table>`).openOn(map);
+      });
+    }
+
+    function addGeoJSON(gj, name='GeoJSON Layer'){
+      const style = styleFor(name);
+      const layer = L.geoJSON(gj, { style, onEachFeature: (f, l)=>{ l.bindTooltip(name); } }).addTo(map);
+      attachFeatureHandlers(layer);
+      const entry = { layer, name, type:'geojson', styleColor: style.color, source: 'custom' };
+      layerRegistry.push(entry); addLayerToUI(entry); map.fitBounds(layer.getBounds());
+      lastDataForTable = gj; // keep for table view
+    }
+
+    document.getElementById('fileInput').addEventListener('change', async (ev)=>{
+      const file = ev.target.files[0]; if(!file) return;
+      const txt = await file.text();
+      try { const gj = JSON.parse(txt); addGeoJSON(gj, file.name.replace(/\..+$/, '')); } catch(err){ alert('Invalid GeoJSON'); }
+    });
+
+    // Add GeoJSON via URL
+    document.getElementById('addGeoJsonUrl').onclick = async ()=>{
+      const url = document.getElementById('geojsonUrl').value.trim(); if(!url) return;
+      try { const res = await fetch(url); const gj = await res.json(); addGeoJSON(gj, url.split('/').pop()); }
+      catch(err){ alert('Failed to load GeoJSON URL'); }
+    };
+
+    // Add WMS layer
+    document.getElementById('addWms').onclick = ()=>{
+      const base = document.getElementById('wmsUrl').value.trim();
+      const name = document.getElementById('wmsLayer').value.trim();
+      if(!base || !name){ alert('Provide WMS URL and layer name'); return; }
+      const wms = L.tileLayer.wms(base, { layers: name, format: 'image/png', transparent: true, attribution: 'WMS' }).addTo(map);
+      const entry = { layer: wms, name: `WMS: ${name}`, type:'wms', styleColor:'#60a5fa' };
+      layerRegistry.push(entry); addLayerToUI(entry);
+    };
+
+    // Analysis
+    let analysisLayer = null;
+    function clearAnalysis(){ if(analysisLayer){ map.removeLayer(analysisLayer); analysisLayer=null; } }
+    document.getElementById('runAnalysis').onclick = ()=>{
+      clearAnalysis();
+      const kind = document.getElementById('analysisSelect').value;
+      const param = parseFloat(document.getElementById('analysisParam').value) || 0;
+      if(!lastDataForTable){ alert('Load or draw some data first.'); return; }
+      const gj = lastDataForTable; // use last loaded layer
+      let result = null;
+      try {
+        if(kind==='buffer') result = turf.buffer(gj, param, { units: 'meters' });
+        if(kind==='centroid') result = turf.centroid(gj);
+        if(kind==='bbox') result = turf.bboxPolygon(turf.bbox(gj));
+      } catch(err){ console.warn(err); }
+      if(result){ analysisLayer = L.geoJSON(result, { style:{ color:'#eab308', weight:2, fillOpacity:.15 } }).addTo(map); map.fitBounds(analysisLayer.getBounds()); addLayerToUI({ layer: analysisLayer, name: `Analysis: ${kind}`, type:'analysis', styleColor:'#eab308' }); layerRegistry.push({ layer: analysisLayer, name: `Analysis: ${kind}`, type:'analysis', styleColor:'#eab308' }); }
+    };
+
+    // Time slider filter (expects a feature property named `year`)
+    const timeToggle = document.getElementById('timeFilterToggle');
+    const timeSlider = document.getElementById('timeSlider');
+    let timeFilterYear = +timeSlider.value;
+    timeSlider.oninput = () => { timeFilterYear = +timeSlider.value; applyTimeFilter(); };
+    timeToggle.onchange = applyTimeFilter;
+
+    function applyTimeFilter(){
+      layerRegistry.forEach(entry=>{
+        if(entry.type!=='geojson') return;
+        if(!timeToggle.checked) { entry.layer.setStyle(()=>({opacity:1, fillOpacity:.15})); return; }
+        entry.layer.setStyle((f)=>{
+          const yr = f && f.properties ? (+f.properties.year || 0) : 0;
+          return { opacity: yr<=timeFilterYear ? 1 : 0.1, fillOpacity: yr<=timeFilterYear ? .2 : 0.03 };
+        });
+      });
+    }
+
+    // Attribute table & CSV export
+    let lastDataForTable = null;
+    const tablePanel = document.getElementById('tablePanel');
+    const attrBtn = document.getElementById('attrBtn');
+    attrBtn.onclick = () => { renderTable(lastDataForTable); tablePanel.style.display = 'block'; };
+    document.getElementById('closeTable').onclick = () => tablePanel.style.display = 'none';
+
+    function renderTable(gj){
+      const tbl = document.getElementById('attrTable');
+      if(!gj || !gj.features || !gj.features.length){ tbl.innerHTML = '<tr><td style="padding:12px">No features loaded.</td></tr>'; return; }
+      const keys = Array.from(new Set(gj.features.flatMap(f=>Object.keys(f.properties||{}))));
+      const thead = '<thead><tr>'+keys.map(k=>`<th>${k}</th>`).join('')+'</tr></thead>';
+      const rows = gj.features.map(f=>'<tr>'+keys.map(k=>`<td>${(f.properties||{})[k]??''}</td>`).join('')+'</tr>').join('');
+      tbl.innerHTML = thead + '<tbody>' + rows + '</tbody>';
+    }
+
+    document.getElementById('downloadCsv').onclick = ()=>{
+      if(!lastDataForTable || !lastDataForTable.features){ alert('No data'); return; }
+      const keys = Array.from(new Set(lastDataForTable.features.flatMap(f=>Object.keys(f.properties||{}))));
+      const csv = [keys.join(',')].concat(lastDataForTable.features.map(f=>keys.map(k=>JSON.stringify((f.properties||{})[k]??'')).join(','))).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='attributes.csv'; a.click(); URL.revokeObjectURL(url);
+    };
+
+    // Share & bookmarks
+    document.getElementById('shareLink').onclick = async ()=>{
+      const z = map.getZoom(); const c = map.getCenter();
+      const url = new URL(window.location.href);
+      url.hash = `#${z}/${c.lat.toFixed(5)}/${c.lng.toFixed(5)}`;
+      await navigator.clipboard.writeText(url.toString());
+      alert('Shareable link copied to clipboard!');
+    };
+
+    function applyHashView(){
+      if(!location.hash) return;
+      const m = location.hash.match(/#(\d+)\/(-?\d+\.?\d*)\/(-?\d+\.?\d*)/);
+      if(m){ map.setView([+m[2], +m[3]], +m[1]); }
+    }
+    window.addEventListener('hashchange', applyHashView); applyHashView();
+
+    const bookmarksEl = document.getElementById('bookmarks');
+    function renderBookmarks(){
+      const bms = JSON.parse(localStorage.getItem('geoportal_bookmarks')||'[]');
+      bookmarksEl.innerHTML='';
+      bms.forEach((b,i)=>{
+        const row = document.createElement('div'); row.className='row';
+        row.innerHTML = `<span class="chip">${b.name}</span><button class="btn">Go</button><button class="btn">🗑️</button>`;
+        const [chip, go, del] = row.querySelectorAll('.chip, .btn');
+        go.onclick = ()=> map.setView(b.center, b.zoom);
+        del.onclick = ()=>{ bms.splice(i,1); localStorage.setItem('geoportal_bookmarks', JSON.stringify(bms)); renderBookmarks(); };
+        chip.onclick = go.onclick;
+        bookmarksEl.appendChild(row);
+      });
+    }
+    renderBookmarks();
+
+    document.getElementById('saveBookmark').onclick = ()=>{
+      const bms = JSON.parse(localStorage.getItem('geoportal_bookmarks')||'[]');
+      const name = prompt('Bookmark name:', `View ${bms.length+1}`) || `View ${bms.length+1}`;
+      bms.push({ name, center: [map.getCenter().lat, map.getCenter().lng], zoom: map.getZoom() });
+      localStorage.setItem('geoportal_bookmarks', JSON.stringify(bms));
+      renderBookmarks();
+    };
+
+    // Sidebar collapse (mobile friendly)
+    const collapseBtn = document.getElementById('collapseSidebar');
+    const collapseIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const expandIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    collapseBtn.onclick = () => {
+      const isCollapsed = appRoot.classList.toggle('collapsed');
+      collapseBtn.innerHTML = isCollapsed ? expandIcon : collapseIcon;
+      // we need to invalidate map size because container has changed
+      setTimeout(() => map.invalidateSize(), 350);
+    };
+
+    // Scale
+    L.control.scale({ position:'bottomleft', metric:true, imperial:false }).addTo(map);
+  </script>
+</body>
+</html>
